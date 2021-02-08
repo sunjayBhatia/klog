@@ -707,7 +707,7 @@ func (l *loggingT) println(s severity, logr logr.Logger, filter LogFilter, args 
 		args = filter.Filter(args)
 	}
 	fmt.Fprintln(buf, args...)
-	l.output(s, logr, buf, file, line, false)
+	l.output(s, logr, buf, 0, file, line, false)
 }
 
 func (l *loggingT) print(s severity, logr logr.Logger, filter LogFilter, args ...interface{}) {
@@ -729,7 +729,7 @@ func (l *loggingT) printDepth(s severity, logr logr.Logger, filter LogFilter, de
 	if buf.Bytes()[buf.Len()-1] != '\n' {
 		buf.WriteByte('\n')
 	}
-	l.output(s, logr, buf, file, line, false)
+	l.output(s, logr, buf, depth, file, line, false)
 }
 
 func (l *loggingT) printf(s severity, logr logr.Logger, filter LogFilter, format string, args ...interface{}) {
@@ -747,7 +747,7 @@ func (l *loggingT) printf(s severity, logr logr.Logger, filter LogFilter, format
 	if buf.Bytes()[buf.Len()-1] != '\n' {
 		buf.WriteByte('\n')
 	}
-	l.output(s, logr, buf, file, line, false)
+	l.output(s, logr, buf, 0, file, line, false)
 }
 
 // printWithFileLine behaves like print but uses the provided file and line number.  If
@@ -768,7 +768,7 @@ func (l *loggingT) printWithFileLine(s severity, logr logr.Logger, filter LogFil
 	if buf.Bytes()[buf.Len()-1] != '\n' {
 		buf.WriteByte('\n')
 	}
-	l.output(s, logr, buf, file, line, alsoToStderr)
+	l.output(s, logr, buf, 0, file, line, alsoToStderr)
 }
 
 // if loggr is specified, will call loggr.Error, otherwise output with logging module.
@@ -777,7 +777,7 @@ func (l *loggingT) errorS(err error, loggr logr.Logger, filter LogFilter, depth 
 		msg, keysAndValues = filter.FilterS(msg, keysAndValues)
 	}
 	if loggr != nil {
-		loggr.Error(err, msg, keysAndValues...)
+		logr.WithCallDepth(loggr, depth+1).Error(err, msg, keysAndValues...)
 		return
 	}
 	l.printS(err, depth+1, msg, keysAndValues...)
@@ -789,7 +789,7 @@ func (l *loggingT) infoS(loggr logr.Logger, filter LogFilter, depth int, msg str
 		msg, keysAndValues = filter.FilterS(msg, keysAndValues)
 	}
 	if loggr != nil {
-		loggr.Info(msg, keysAndValues...)
+		logr.WithCallDepth(loggr, depth+1).Info(msg, keysAndValues...)
 		return
 	}
 	l.printS(nil, depth+1, msg, keysAndValues...)
@@ -860,8 +860,6 @@ func (rb *redirectBuffer) Write(bytes []byte) (n int, err error) {
 // SetLogger will set the backing logr implementation for klog.
 // If set, all log lines will be suppressed from the regular Output, and
 // redirected to the logr implementation.
-// All log lines include the 'severity', 'file' and 'line' values attached as
-// structured logging values.
 // Use as:
 //   ...
 //   klog.SetLogger(zapr.NewLogger(zapLog))
@@ -904,7 +902,7 @@ func LogToStderr(stderr bool) {
 }
 
 // output writes the data to the log files and releases the buffer.
-func (l *loggingT) output(s severity, log logr.Logger, buf *buffer, file string, line int, alsoToStderr bool) {
+func (l *loggingT) output(s severity, log logr.Logger, buf *buffer, depth int, file string, line int, alsoToStderr bool) {
 	l.mu.Lock()
 	if l.traceLocation.isSet() {
 		if l.traceLocation.match(file, line) {
@@ -916,9 +914,9 @@ func (l *loggingT) output(s severity, log logr.Logger, buf *buffer, file string,
 		// TODO: set 'severity' and caller information as structured log info
 		// keysAndValues := []interface{}{"severity", severityName[s], "file", file, "line", line}
 		if s == errorLog {
-			l.logr.Error(nil, string(data))
+			logr.WithCallDepth(l.logr, depth+3).Error(nil, string(data))
 		} else {
-			log.Info(string(data))
+			logr.WithCallDepth(log, depth+3).Info(string(data))
 		}
 	} else if l.toStderr {
 		os.Stderr.Write(data)

@@ -1365,6 +1365,74 @@ func TestErrorSWithLogr(t *testing.T) {
 	}
 }
 
+func TestCallDepthLogr(t *testing.T) {
+	logger := &callDepthTestLogr{
+		callDepth: -1,
+	}
+
+	testData := []struct {
+		msg           string
+		logFn         func()
+		expectedDepth int
+	}{
+		{
+			msg:           "Info log",
+			logFn:         func() { Info("info log") },
+			expectedDepth: 4,
+		},
+		{
+			msg:           "InfoDepth log",
+			logFn:         func() { InfoDepth(5, "infodepth log") },
+			expectedDepth: 8,
+		},
+		{
+			msg:           "InfoS log",
+			logFn:         func() { InfoS("infoS log") },
+			expectedDepth: 1,
+		},
+		{
+			msg:           "Warning log",
+			logFn:         func() { Warning("warning log") },
+			expectedDepth: 4,
+		},
+		{
+			msg:           "WarningDepth log",
+			logFn:         func() { WarningDepth(3, "warningdepth log") },
+			expectedDepth: 6,
+		},
+		{
+			msg:           "Error log",
+			logFn:         func() { Error("error log") },
+			expectedDepth: 4,
+		},
+		{
+			msg:           "ErrorDepth log",
+			logFn:         func() { ErrorDepth(7, "errordepth log") },
+			expectedDepth: 10,
+		},
+		{
+			msg:           "ErrorS log",
+			logFn:         func() { ErrorS(errors.New("some-error"), "errorS log") },
+			expectedDepth: 1,
+		},
+	}
+
+	for _, data := range testData {
+		t.Run(data.msg, func(t *testing.T) {
+			SetLogger(logger)
+			defer SetLogger(nil)
+			defer logger.reset()
+			defer logger.resetCallDepth()
+
+			data.logFn()
+
+			if data.expectedDepth != logger.callDepth {
+				t.Errorf("expected call depth of: %d; but got: %d", data.expectedDepth, logger.callDepth)
+			}
+		})
+	}
+}
+
 type testLogr struct {
 	entries []testLogrEntry
 	mutex   sync.Mutex
@@ -1409,6 +1477,20 @@ func (l *testLogr) V(int) logr.Logger           { panic("not implemented") }
 func (l *testLogr) WithName(string) logr.Logger { panic("not implemented") }
 func (l *testLogr) WithValues(...interface{}) logr.Logger {
 	panic("not implemented")
+}
+
+type callDepthTestLogr struct {
+	testLogr
+	callDepth int
+}
+
+func (l *callDepthTestLogr) resetCallDepth() {
+	l.callDepth = -1
+}
+
+func (l *callDepthTestLogr) WithCallDepth(depth int) logr.Logger {
+	l.callDepth = depth
+	return l
 }
 
 // existedFlag contains all existed flag, without KlogPrefix
